@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>소파 밑 탐험대</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    #app {
+      width: 360px;
+      height: 680px;
+      position: relative;
+      overflow: hidden;
+      font-family: 'Press Start 2P', monospace;
+    }
+
+    /* 스캔라인 오버레이 */
+    #app::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 2px,
+        rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    /* ── 공통 스크린 ── */
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: none;
+    }
+
+    /* ── 메인 화면 ── */
+    #screen-main {
+      background: #1a0e2e;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #star-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .main-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+    }
+
+    .game-title {
+      color: #f5c842;
+      font-size: 13px;
+      text-align: center;
+      line-height: 2;
+      text-shadow: 3px 3px 0 #000, -1px -1px 0 #000;
+      margin-bottom: 28px;
+    }
+
+    #sofa-canvas {
+      display: block;
+      image-rendering: pixelated;
+      margin-bottom: 36px;
+    }
+
+    .btn {
+      display: block;
+      padding: 14px 8px;
+      background: #f5c842;
+      color: #1a0e2e;
+      border: none;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 10px;
+      text-align: center;
+      cursor: pointer;
+      box-shadow: 4px 4px 0 #000;
+      transition: transform 0.05s, box-shadow 0.05s;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .btn:active {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0 #000;
+    }
+
+    #btn-start { width: 220px; margin-bottom: 12px; }
+
+    .btn-row { display: flex; gap: 12px; }
+
+    .btn-sm {
+      padding: 11px 8px;
+      font-size: 9px;
+      width: 100px;
+      background: #2a1a4e;
+      color: #c8b8e8;
+      border: none;
+      font-family: 'Press Start 2P', monospace;
+      cursor: pointer;
+      box-shadow: 4px 4px 0 #000;
+      transition: transform 0.05s, box-shadow 0.05s;
+      user-select: none;
+    }
+    .btn-sm:active {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0 #000;
+    }
+
+    /* ── 게임 화면 ── */
+    #screen-game { background: #000; }
+
+    #game-canvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    /* ── 도감 / 기록 공통 ── */
+    #screen-collection,
+    #screen-records {
+      background: #1a0e2e;
+      color: #c8b8e8;
+      flex-direction: column;
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    .screen-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .screen-title {
+      font-size: 10px;
+      color: #f5c842;
+      text-shadow: 2px 2px 0 #000;
+    }
+
+    .btn-back {
+      background: #2a1a4e;
+      color: #c8b8e8;
+      border: none;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      box-shadow: 3px 3px 0 #000;
+    }
+    .btn-back:active {
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px 0 #000;
+    }
+
+    /* ── 도감 그리드 ── */
+    .col-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .c-item {
+      aspect-ratio: 1;
+      background: #2a1a4e;
+      border: 2px solid #3d2060;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      position: relative;
+    }
+    .c-item.locked { filter: brightness(0.15); }
+
+    .c-rarity {
+      position: absolute;
+      bottom: 3px; right: 3px;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+    }
+    .r-common { background: #888; }
+    .r-rare   { background: #44aaff; }
+    .r-epic   { background: #e05c2a; }
+
+    /* ── 기록 ── */
+    .stats-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat-box {
+      flex: 1;
+      background: #2a1a4e;
+      padding: 12px 8px;
+      text-align: center;
+    }
+    .stat-num {
+      display: block;
+      font-size: 22px;
+      color: #f5c842;
+      margin-bottom: 6px;
+    }
+    .stat-label { font-size: 7px; }
+
+    .record-row {
+      background: #2a1a4e;
+      border-left: 3px solid #f5c842;
+      padding: 10px 12px;
+      font-size: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .record-row.fail { border-left-color: #e05c2a; }
+    .record-date { color: #555; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ① 메인 화면 -->
+  <div id="screen-main" class="screen" style="display:flex">
+    <canvas id="star-canvas"></canvas>
+    <div class="main-content">
+      <div class="game-title">소파 밑<br>탐험대</div>
+      <canvas id="sofa-canvas" width="200" height="122"></canvas>
+      <button class="btn" id="btn-start">▶  탐험 시작</button>
+      <div class="btn-row">
+        <button class="btn-sm" id="btn-collection">📦 도감</button>
+        <button class="btn-sm" id="btn-records">📋 기록</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ② 게임 화면 -->
+  <div id="screen-game" class="screen">
+    <canvas id="game-canvas" width="360" height="680"></canvas>
+  </div>
+
+  <!-- ③ 도감 화면 -->
+  <div id="screen-collection" class="screen">
+    <div class="screen-header">
+      <button class="btn-back" id="btn-back-col">← 뒤로</button>
+      <span class="screen-title">도감</span>
+    </div>
+    <div class="col-grid" id="col-grid"></div>
+  </div>
+
+  <!-- ④ 기록 화면 -->
+  <div id="screen-records" class="screen">
+    <div class="screen-header">
+      <button class="btn-back" id="btn-back-rec">← 뒤로</button>
+      <span class="screen-title">기록</span>
+    </div>
+    <div class="stats-row">
+      <div class="stat-box">
+        <span class="stat-num" id="stat-plays">0</span>
+        <span class="stat-label">총 판수</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-num" id="stat-wins">0</span>
+        <span class="stat-label">성공</span>
+      </div>
+    </div>
+    <div id="rec-list"></div>
+  </div>
+
+</div><!-- #app -->
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════
+const GW = 360, GH = 680;
+const WORLD_H       = 2800;
+const ENTRANCE_Y    = 100;
+const ITEM_Y        = WORLD_H - 250;   // 2550
+const SCROLL        = 2.0;
+const SCROLL_UP     = 2.3;             // × 1.15
+const RW            = 5;               // 자 반너비
+const PICKUP_FRAMES = 50;
+
+// 상태 머신 열거값
+const STATE = Object.freeze({
+  MAIN:       'main',
+  GAME:       'game',
+  COLLECTION: 'collection',
+  RECORDS:    'records',
+});
+
+// 게임 단계 열거값
+const PHASE = Object.freeze({
+  DESCEND: 'descend',
+  PICKUP:  'pickup',
+  ASCEND:  'ascend',
+  DONE:    'done',
+});
+
+
+// ═══════════════════════════════════════════
+//  아이템 카탈로그 (20개)
+// ═══════════════════════════════════════════
+const ITEMS = [
+  { id:'i01', name:'짝 잃은 양말',     emoji:'🧦', rarity:'common' },
+  { id:'i02', name:'과자 부스러기',     emoji:'🍪', rarity:'common' },
+  { id:'i03', name:'리모컨 배터리',     emoji:'🔋', rarity:'common' },
+  { id:'i04', name:'머리카락 공',       emoji:'🧶', rarity:'common' },
+  { id:'i05', name:'500원 동전',        emoji:'🪙', rarity:'common' },
+  { id:'i06', name:'영수증',            emoji:'🧾', rarity:'common' },
+  { id:'i07', name:'볼펜 뚜껑',         emoji:'✒️', rarity:'common' },
+  { id:'i08', name:'고양이 장난감',     emoji:'🐱', rarity:'common' },
+  { id:'i09', name:'단추',              emoji:'🔘', rarity:'common' },
+  { id:'i10', name:'낡은 이어폰',       emoji:'🎧', rarity:'common' },
+  { id:'i11', name:'만원 지폐',         emoji:'💴', rarity:'rare'   },
+  { id:'i12', name:'잃어버린 반지',     emoji:'💍', rarity:'rare'   },
+  { id:'i13', name:'지우개',            emoji:'🩹', rarity:'rare'   },
+  { id:'i14', name:'택배 송장',         emoji:'📦', rarity:'rare'   },
+  { id:'i15', name:'폴라로이드 사진',   emoji:'📷', rarity:'rare'   },
+  { id:'i16', name:'레고 조각',         emoji:'🧱', rarity:'rare'   },
+  { id:'i17', name:'오래된 껌',         emoji:'🍬', rarity:'rare'   },
+  { id:'i18', name:'햄스터의 비밀일기', emoji:'📓', rarity:'epic'   },
+  { id:'i19', name:'리모컨 본체',       emoji:'📺', rarity:'epic'   },
+  { id:'i20', name:'차원의 문',         emoji:'🚪', rarity:'epic'   },
+];
+
+
+// ═══════════════════════════════════════════
+//  세이브 데이터 (localStorage)
+// ═══════════════════════════════════════════
+const SAVE_KEY = 'sofa_explorer_v1';
+
+function defaultSave() {
+  return { collected: [], records: [], totalPlays: 0, wins: 0 };
+}
+function loadSave() {
+  try { return { ...defaultSave(), ...JSON.parse(localStorage.getItem(SAVE_KEY)) }; }
+  catch { return defaultSave(); }
+}
+function writeSave() {
+  localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+}
+
+let save = loadSave();
+
+
+// ═══════════════════════════════════════════
+//  상태 머신
+// ═══════════════════════════════════════════
+let appState   = STATE.MAIN;
+let starAnimId = null;
+
+function gotoState(next) {
+  document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
+  appState = next;
+
+  switch (next) {
+    case STATE.MAIN:
+      document.getElementById('screen-main').style.display = 'flex';
+      startStars();
+      break;
+
+    case STATE.GAME:
+      document.getElementById('screen-game').style.display = 'block';
+      if (starAnimId) { cancelAnimationFrame(starAnimId); starAnimId = null; }
+      startGame();
+      break;
+
+    case STATE.COLLECTION:
+      document.getElementById('screen-collection').style.display = 'flex';
+      renderCollection();
+      break;
+
+    case STATE.RECORDS:
+      document.getElementById('screen-records').style.display = 'flex';
+      renderRecords();
+      break;
+  }
+}
+
+
+// ═══════════════════════════════════════════
+//  게임 상태
+// ═══════════════════════════════════════════
+let gs = {};
+
+function startGame() {
+  gs = {
+    phase:       PHASE.DESCEND,
+    cameraY:     0,
+    rulerX:      GW / 2,
+    hasItem:     false,
+    pickedItem:  null,
+    pickupTimer: 0,
+    gameOver:    false,
+    result:      null,   // 'win' | 'empty'
+  };
+  if (gameAnimId) cancelAnimationFrame(gameAnimId);
+  gameLoop();
+}
+
+
+// ═══════════════════════════════════════════
+//  게임 루프
+// ═══════════════════════════════════════════
+const gameCanvas = document.getElementById('game-canvas');
+const ctx        = gameCanvas.getContext('2d');
+let   gameAnimId = null;
+
+function gameLoop() {
+  function tick() {
+    update();
+    draw();
+    // gameOver 여부와 무관하게 GAME 상태면 계속 돌림 (결과 화면 블링크 유지)
+    if (appState === STATE.GAME) {
+      gameAnimId = requestAnimationFrame(tick);
+    }
+  }
+  gameAnimId = requestAnimationFrame(tick);
+}
+
+// ─── UPDATE ──────────────────────────────────
+function update() {
+  if (gs.gameOver) return;
+
+  switch (gs.phase) {
+
+    case PHASE.DESCEND:
+      gs.cameraY += SCROLL;
+      // 아이템 박스가 화면 하단 62% 지점에 닿으면 pickup 전환
+      if (toScreenY(ITEM_Y) <= GH * 0.62) {
+        gs.phase       = PHASE.PICKUP;
+        gs.pickupTimer = PICKUP_FRAMES;
+      }
+      break;
+
+    case PHASE.PICKUP:
+      if (--gs.pickupTimer <= 0) {
+        gs.hasItem   = true;
+        gs.pickedItem = rollItem();
+        gs.phase     = PHASE.ASCEND;
+      }
+      break;
+
+    case PHASE.ASCEND:
+      gs.cameraY -= SCROLL_UP;
+      if (gs.cameraY <= 0) {
+        gs.cameraY = 0;
+        gs.phase   = PHASE.DONE;
+        endGame('win');
+      }
+      break;
+  }
+}
+
+// 월드 Y → 화면 Y 변환
+function toScreenY(worldY) { return worldY - gs.cameraY; }
+
+// 등급 가중치로 아이템 뽑기
+function rollItem() {
+  const r = Math.random();
+  let pool;
+  if      (r < 0.65) pool = ITEMS.filter(i => i.rarity === 'common');
+  else if (r < 0.90) pool = ITEMS.filter(i => i.rarity === 'rare');
+  else               pool = ITEMS.filter(i => i.rarity === 'epic');
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function endGame(result) {
+  gs.gameOver = true;
+  gs.result   = result;
+
+  save.totalPlays++;
+  if (result === 'win' && gs.pickedItem) {
+    save.wins++;
+    if (!save.collected.includes(gs.pickedItem.id))
+      save.collected.push(gs.pickedItem.id);
+    save.records.unshift({
+      itemId: gs.pickedItem.id,
+      date:   new Date().toLocaleDateString('ko-KR'),
+    });
+  } else {
+    save.records.unshift({ itemId: null, date: new Date().toLocaleDateString('ko-KR') });
+  }
+  if (save.records.length > 8) save.records.length = 8;
+  writeSave();
+
+  // 결과 오버레이 터치 → 메인으로
+  gameCanvas.addEventListener('pointerup', () => gotoState(STATE.MAIN), { once: true });
+}
+
+
+// ─── DRAW ────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, GW, GH);
+  drawBg();
+  drawEntranceLight();
+  drawItemBox();
+  drawRuler();
+  drawHUD();
+  if (gs.gameOver) drawResult();
+}
+
+function drawBg() {
+  const depth = Math.min(gs.cameraY / WORLD_H, 1);
+  const lo    = Math.max(0, Math.floor(16 - depth * 8));
+  const grad  = ctx.createLinearGradient(0, 0, 0, GH);
+  grad.addColorStop(0, `rgb(${lo + 8},${lo},${lo + 16})`);
+  grad.addColorStop(1, `rgb(${lo},${Math.max(0,lo-4)},${lo + 8})`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, GW, GH);
+
+  // 소파 입구 천장
+  const entranceSY = toScreenY(0);
+  if (entranceSY > -40 && entranceSY < GH) {
+    ctx.fillStyle = '#2a1a4e';
+    ctx.fillRect(0, entranceSY - 40, GW, 48);
+    ctx.fillStyle = '#3d2060';
+    ctx.fillRect(0, entranceSY + 6, GW, 4);
+  }
+}
+
+function drawEntranceLight() {
+  if (gs.cameraY >= 400) return;
+  const alpha  = (1 - gs.cameraY / 400) * 0.28;
+  const sy     = toScreenY(0);
+  const grad   = ctx.createLinearGradient(GW / 2, sy, GW / 2, sy + 300);
+  grad.addColorStop(0, `rgba(61,186,78,${alpha})`);
+  grad.addColorStop(1, 'rgba(61,186,78,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(GW / 2 - 25, sy);
+  ctx.lineTo(GW / 2 + 25, sy);
+  ctx.lineTo(GW / 2 + 75, sy + 300);
+  ctx.lineTo(GW / 2 - 75, sy + 300);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawItemBox() {
+  const sy = toScreenY(ITEM_Y);
+  if (sy < -20 || sy > GH + 20) return;
+
+  // pickup 단계 → 깜빡임
+  if (gs.phase === PHASE.PICKUP) {
+    ctx.fillStyle = Math.floor(Date.now() / 180) % 2 ? '#f5c842' : '#e05c2a';
+  } else if (gs.phase === PHASE.DESCEND) {
+    ctx.fillStyle = '#c8b8e8';
+  } else {
+    return; // ascend 이후 박스 숨김
+  }
+
+  // 16×16 ? 박스
+  ctx.fillRect(GW / 2 - 8, sy - 8, 16, 16);
+  ctx.fillStyle = '#1a0e2e';
+  ctx.font = 'bold 10px "Press Start 2P", monospace';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('?', GW / 2, sy);
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawRuler() {
+  const x    = Math.floor(gs.rulerX);
+  const topY = 20;
+  const tipY = Math.floor(GH * 0.75);
+
+  // 자 몸통
+  ctx.fillStyle = '#f5c842';
+  ctx.fillRect(x - RW, topY, RW * 2, tipY - topY);
+
+  // 눈금 (20칸)
+  ctx.fillStyle = '#1a0e2e';
+  const step = (tipY - topY) / 20;
+  for (let i = 0; i <= 20; i++) {
+    const ty = topY + i * step;
+    const tw = i % 5 === 0 ? RW * 2 : RW;
+    ctx.fillRect(x - RW,       ty, tw, 1);  // 왼쪽
+    ctx.fillRect(x + RW - tw,  ty, tw, 1);  // 오른쪽
+  }
+
+  // 끝 원형 (주황)
+  ctx.fillStyle = '#e05c2a';
+  ctx.beginPath();
+  ctx.arc(x, tipY, RW + 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 상승 중 아이템 아이콘
+  if (gs.hasItem && gs.pickedItem && gs.phase === PHASE.ASCEND) {
+    ctx.font         = '14px serif';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(gs.pickedItem.emoji, x, tipY - 14);
+  }
+}
+
+function drawHUD() {
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, GW, 26);
+
+  const labels = {
+    [PHASE.DESCEND]: { text: '▼ 내려가는 중', color: '#c8b8e8' },
+    [PHASE.PICKUP]:  { text: '★ 아이템 발견!', color: '#f5c842' },
+    [PHASE.ASCEND]:  { text: '▲ 올라가는 중',  color: '#3dba4e' },
+    [PHASE.DONE]:    { text: '✓ 완료',          color: '#3dba4e' },
+  };
+  const lbl = labels[gs.phase];
+
+  ctx.font         = '7px "Press Start 2P", monospace';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign    = 'left';
+  ctx.fillStyle    = lbl.color;
+  ctx.fillText(lbl.text, 8, 13);
+
+  const pct = Math.min(Math.floor(gs.cameraY / WORLD_H * 100), 100);
+  ctx.fillStyle = '#666';
+  ctx.textAlign = 'right';
+  ctx.fillText(`${pct}%`, GW - 8, 13);
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawResult() {
+  const bx = 28, bw = GW - 56, by = GH / 2 - 90, bh = 200;
+
+  ctx.fillStyle   = 'rgba(26,14,46,0.93)';
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.strokeStyle = '#f5c842';
+  ctx.lineWidth   = 2;
+  ctx.strokeRect(bx, by, bw, bh);
+
+  ctx.textAlign = 'center';
+
+  if (gs.result === 'win' && gs.pickedItem) {
+    ctx.fillStyle = '#f5c842';
+    ctx.font      = '11px "Press Start 2P", monospace';
+    ctx.fillText('탐험 성공!', GW / 2, by + 38);
+
+    ctx.font         = '36px serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(gs.pickedItem.emoji, GW / 2, by + 90);
+    ctx.textBaseline = 'alphabetic';
+
+    ctx.fillStyle = '#c8b8e8';
+    ctx.font      = '7px "Press Start 2P", monospace';
+    ctx.fillText(gs.pickedItem.name, GW / 2, by + 130);
+
+    const rarityColor = { common:'#888', rare:'#44aaff', epic:'#e05c2a' }[gs.pickedItem.rarity];
+    ctx.fillStyle = rarityColor;
+    ctx.fillText(`[ ${gs.pickedItem.rarity.toUpperCase()} ]`, GW / 2, by + 150);
+
+  } else {
+    ctx.fillStyle = '#e05c2a';
+    ctx.font      = '11px "Press Start 2P", monospace';
+    ctx.fillText('빈손 귀환', GW / 2, by + 80);
+  }
+
+  // 터치 안내 (블링크)
+  const blink = Math.floor(Date.now() / 500) % 2;
+  ctx.fillStyle = blink ? '#3dba4e' : 'rgba(61,186,78,0.35)';
+  ctx.font      = '7px "Press Start 2P", monospace';
+  ctx.fillText('터치하여 계속', GW / 2, by + bh - 14);
+}
+
+
+// ═══════════════════════════════════════════
+//  입력 처리 (터치 / 마우스)
+// ═══════════════════════════════════════════
+(function setupInput() {
+  let dragging = false;
+
+  function getX(e) {
+    const r     = gameCanvas.getBoundingClientRect();
+    const scale = GW / r.width;
+    const cx    = e.touches ? e.touches[0].clientX : e.clientX;
+    return (cx - r.left) * scale;
+  }
+
+  function moveRuler(e) {
+    if (gs.phase !== PHASE.DESCEND && gs.phase !== PHASE.ASCEND) return;
+    const x   = getX(e);
+    gs.rulerX = Math.max(RW + 10, Math.min(GW - RW - 10, x));
+  }
+
+  gameCanvas.addEventListener('pointerdown', e => { dragging = true; moveRuler(e); });
+  gameCanvas.addEventListener('pointermove', e => { if (dragging) moveRuler(e); });
+  gameCanvas.addEventListener('pointerup',   ()  => { dragging = false; });
+  gameCanvas.addEventListener('touchmove',   e => { e.preventDefault(); moveRuler(e); }, { passive: false });
+})();
+
+
+// ═══════════════════════════════════════════
+//  메인 화면 — 별 애니메이션
+// ═══════════════════════════════════════════
+const starCanvas = document.getElementById('star-canvas');
+const sctx       = starCanvas.getContext('2d');
+starCanvas.width  = 360;
+starCanvas.height = 680;
+
+const STARS = Array.from({ length: 60 }, () => ({
+  x:     Math.random() * 360,
+  y:     Math.random() * 680,
+  size:  Math.random() < 0.25 ? 2 : 1,
+  t:     Math.random() * Math.PI * 2,
+  speed: 0.015 + Math.random() * 0.02,
+}));
+
+function startStars() {
+  if (starAnimId) cancelAnimationFrame(starAnimId);
+  function tick() {
+    sctx.clearRect(0, 0, 360, 680);
+    for (const s of STARS) {
+      s.t += s.speed;
+      const a = (Math.sin(s.t) + 1) / 2;
+      sctx.fillStyle = `rgba(245,200,66,${(a * 0.7 + 0.1).toFixed(2)})`;
+      sctx.fillRect(Math.floor(s.x), Math.floor(s.y), s.size, s.size);
+    }
+    if (appState === STATE.MAIN) starAnimId = requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+
+// ═══════════════════════════════════════════
+//  메인 화면 — 소파 픽셀아트
+// ═══════════════════════════════════════════
+function drawSofa() {
+  const c   = document.getElementById('sofa-canvas');
+  const s   = c.getContext('2d');
+  const p   = (x, y, w, h, col) => { s.fillStyle = col; s.fillRect(x, y, w, h); };
+
+  // 다리
+  p(22, 100, 10, 22, '#3a1a08');
+  p(168, 100, 10, 22, '#3a1a08');
+
+  // 좌석 본체
+  p(10, 64, 180, 44, '#6b3820');
+
+  // 팔걸이 (좌/우)
+  p(10, 18, 22, 50, '#7d4628');
+  p(168, 18, 22, 50, '#7d4628');
+
+  // 등받이
+  p(10, 18, 180, 20, '#7d4628');
+
+  // 쿠션 2개
+  p(36, 70, 64, 32, '#8a5030');
+  p(106, 70, 64, 32, '#8a5030');
+
+  // 쿠션 하이라이트
+  p(38, 72, 28, 3, '#9a6040');
+  p(108, 72, 28, 3, '#9a6040');
+
+  // 소파 밑 어둠 + ? 힌트
+  p(10, 108, 180, 12, '#0e0818');
+  s.fillStyle = '#3a2060';
+  s.font      = 'bold 9px "Press Start 2P", monospace';
+  s.textAlign = 'center';
+  s.fillText('?', 100, 119);
+
+  // 그림자
+  p(6, 120, 188, 3, '#000');
+}
+
+
+// ═══════════════════════════════════════════
+//  도감 화면
+// ═══════════════════════════════════════════
+function renderCollection() {
+  const grid = document.getElementById('col-grid');
+  grid.innerHTML = '';
+  for (const item of ITEMS) {
+    const unlocked = save.collected.includes(item.id);
+    const div      = document.createElement('div');
+    div.className  = `c-item${unlocked ? '' : ' locked'}`;
+    div.innerHTML  = `
+      <span>${item.emoji}</span>
+      <span class="c-rarity r-${item.rarity}"></span>
+    `;
+    div.title = unlocked ? item.name : '???';
+    grid.appendChild(div);
+  }
+}
+
+
+// ═══════════════════════════════════════════
+//  기록 화면
+// ═══════════════════════════════════════════
+function renderRecords() {
+  document.getElementById('stat-plays').textContent = save.totalPlays;
+  document.getElementById('stat-wins').textContent  = save.wins;
+
+  const list = document.getElementById('rec-list');
+  list.innerHTML = '';
+
+  if (!save.records.length) {
+    list.innerHTML = '<div style="font-size:8px;color:#555;text-align:center;padding:24px">아직 기록 없음</div>';
+    return;
+  }
+
+  for (const r of save.records) {
+    const item = ITEMS.find(i => i.id === r.itemId);
+    const div  = document.createElement('div');
+    div.className = `record-row${item ? '' : ' fail'}`;
+    div.innerHTML = item
+      ? `<span>${item.emoji} ${item.name}</span><span class="record-date">${r.date}</span>`
+      : `<span style="color:#e05c2a">빈손 귀환</span><span class="record-date">${r.date}</span>`;
+    list.appendChild(div);
+  }
+}
+
+
+// ═══════════════════════════════════════════
+//  버튼 이벤트
+// ═══════════════════════════════════════════
+document.getElementById('btn-start').addEventListener('click', () => gotoState(STATE.GAME));
+document.getElementById('btn-collection').addEventListener('click', () => gotoState(STATE.COLLECTION));
+document.getElementById('btn-records').addEventListener('click', () => gotoState(STATE.RECORDS));
+document.getElementById('btn-back-col').addEventListener('click', () => gotoState(STATE.MAIN));
+document.getElementById('btn-back-rec').addEventListener('click', () => gotoState(STATE.MAIN));
+
+
+// ═══════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════
+drawSofa();
+startStars();
+</script>
+</body>
+</html>
