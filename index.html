@@ -289,6 +289,7 @@
 
 </div><!-- #app -->
 
+
 <script>
 'use strict';
 
@@ -302,9 +303,10 @@ const ITEM_Y        = WORLD_H - 250;   // 2550
 const SCROLL        = 2.0;
 const SCROLL_UP     = 2.3;             // × 1.15
 const RW            = 5;               // 자 반너비
-const PICKUP_FRAMES = 50;
+const PICKUP_FRAMES    = 50;
+const ITEM_TRIGGER_PCT = 0.62;   // ? 박스가 도달해야 할 화면 Y 비율 (상단 기준)
 
-// 상태 머신 열거값
+// ── 앱 상태 열거값 ──────────────────────────
 const STATE = Object.freeze({
   MAIN:       'main',
   GAME:       'game',
@@ -312,14 +314,52 @@ const STATE = Object.freeze({
   RECORDS:    'records',
 });
 
-// 게임 단계 열거값
+// ── 게임 단계 열거값 ────────────────────────
 const PHASE = Object.freeze({
-  DESCEND: 'descend',
-  PICKUP:  'pickup',
-  ASCEND:  'ascend',
-  DONE:    'done',
+  DESCEND: 'descend',   // 자동 하강
+  PICKUP:  'pickup',    // 아이템 획득 대기
+  ASCEND:  'ascend',    // 자동 상승
+  DONE:    'done',      // 입구 도달, 성공 판정
 });
 
+// ── 단계별 설정 (스크롤 속도 + HUD 메타) ────
+//   scroll > 0 : 아래로 이동 (cameraY 증가)
+//   scroll < 0 : 위로 이동  (cameraY 감소)
+//   scroll = 0 : 카메라 정지
+const PHASE_CONFIG = Object.freeze({
+  [PHASE.DESCEND]: { scroll: +SCROLL,    label: '▼ 내려가는 중', labelColor: '#c8b8e8' },
+  [PHASE.PICKUP]:  { scroll:  0,          label: '★ 아이템 발견!', labelColor: '#f5c842' },
+  [PHASE.ASCEND]:  { scroll: -SCROLL_UP,  label: '▲ 올라가는 중',  labelColor: '#3dba4e' },
+  [PHASE.DONE]:    { scroll:  0,          label: '✓ 완료',          labelColor: '#3dba4e' },
+});
+
+
+// ═══════════════════════════════════════════
+//  햄스터 배치 데이터
+// ═══════════════════════════════════════════
+const HAMSTER_SPR = new Image();
+HAMSTER_SPR.src = 'assets/hamsters.png';
+
+const SPRITE_FRAMES   = 5;
+const FRAME_INTERVAL  = 1000 / 2;   // ms per sprite frame → 2fps
+const SPRITE_LOOP     = [0, 1, 2, 3, 4];
+
+const HAMSTER_SIZE  = 32;
+const HAMSTER_X_MIN = 10;
+const HAMSTER_X_MAX = GW - HAMSTER_SIZE - 10;   // 318
+
+// 짝수 인덱스 → 왼쪽, 홀수 인덱스 → 오른쪽
+const HAMSTERS = [350, 680, 1020, 1380, 1720, 2050, 2350].map((worldY, i) => {
+  const side = i % 2 === 0 ? 'left' : 'right';
+  return {
+    worldY,
+    side,
+    x:          side === 'left' ? HAMSTER_X_MIN : HAMSTER_X_MAX,
+    vx:         side === 'left' ? 0.8 : -0.8,
+    loopIndex:  0,
+    frameTimer: 0,
+  };
+});
 
 // ═══════════════════════════════════════════
 //  아이템 카탈로그 (20개)
@@ -417,6 +457,7 @@ function startGame() {
     pickupTimer: 0,
     gameOver:    false,
     result:      null,   // 'win' | 'empty'
+    endReason:   null,   // 'win' | 'hamster'
   };
   if (gameAnimId) cancelAnimationFrame(gameAnimId);
   gameLoop();
@@ -446,38 +487,89 @@ function gameLoop() {
 function update() {
   if (gs.gameOver) return;
 
-  switch (gs.phase) {
+  // 1. PHASE_CONFIG 기반 카메라 스크롤
+  gs.cameraY = clampCam(gs.cameraY + PHASE_CONFIG[gs.phase].scroll);
 
+  // 2. PICKUP 타이머 감소
+  if (gs.phase === PHASE.PICKUP) gs.pickupTimer--;
+
+  // 3. 전환 조건 확인 → 해당 페이즈 진입 처리
+  const next = checkTransition();
+  if (next !== null) transitionPhase(next);
+
+  // 4. 햄스터 이동
+  updateHamsters();
+}
+
+// 전환 조건: 현재 페이즈에서 다음 페이즈를 반환, 유지 시 null
+function checkTransition() {
+  // 햄스터 충돌 (DESCEND / ASCEND 에서만)
+  if (gs.phase === PHASE.DESCEND || gs.phase === PHASE.ASCEND) {
+    if (hitHamster()) {
+      gs.endReason = 'hamster';
+      return PHASE.DONE;
+    }
+  }
+
+  switch (gs.phase) {
     case PHASE.DESCEND:
-      gs.cameraY += SCROLL;
-      // 아이템 박스가 화면 하단 62% 지점에 닿으면 pickup 전환
-      if (toScreenY(ITEM_Y) <= GH * 0.62) {
-        gs.phase       = PHASE.PICKUP;
-        gs.pickupTimer = PICKUP_FRAMES;
-      }
-      break;
+      // ? 박스가 화면 상단에서 ITEM_TRIGGER_PCT 위치에 도달하면 PICKUP 전환
+      return toScreenY(ITEM_Y) <= GH * ITEM_TRIGGER_PCT ? PHASE.PICKUP : null;
 
     case PHASE.PICKUP:
-      if (--gs.pickupTimer <= 0) {
-        gs.hasItem   = true;
-        gs.pickedItem = rollItem();
-        gs.phase     = PHASE.ASCEND;
-      }
+      // 대기 프레임 소진 시 ASCEND 전환
+      return gs.pickupTimer <= 0 ? PHASE.ASCEND : null;
+
+    case PHASE.ASCEND:
+      // 입구(cameraY=0) 도달 시 DONE 전환
+      return gs.cameraY <= 0 ? PHASE.DONE : null;
+
+    default:
+      return null;
+  }
+}
+
+// 전환 실행: 페이즈 변경 + 진입 시 사이드이펙트 처리
+function transitionPhase(next) {
+  gs.phase = next;
+
+  switch (next) {
+    case PHASE.PICKUP:
+      gs.pickupTimer = PICKUP_FRAMES;
       break;
 
     case PHASE.ASCEND:
-      gs.cameraY -= SCROLL_UP;
-      if (gs.cameraY <= 0) {
-        gs.cameraY = 0;
-        gs.phase   = PHASE.DONE;
-        endGame('win');
-      }
+      gs.hasItem    = true;
+      gs.pickedItem = rollItem();
+      break;
+
+    case PHASE.DONE:
+      gs.cameraY = 0;    // 정확히 입구 위치로 고정
+      endGame(gs.endReason ?? 'win');
       break;
   }
 }
 
+// cameraY 하한 보정 (음수 방지)
+function clampCam(y) { return Math.max(0, y); }
+
 // 월드 Y → 화면 Y 변환
 function toScreenY(worldY) { return worldY - gs.cameraY; }
+
+// 줄자 끝 ↔ 햄스터 중심 원형 충돌 판정
+function hitHamster() {
+  const tipX = gs.rulerX;
+  const tipY = GH * 0.75;
+  const r    = (RW + 3) + HAMSTER_SIZE / 2;   // 자 끝 원 반지름 + 햄스터 절반
+  for (const h of HAMSTERS) {
+    const sy = toScreenY(h.worldY);
+    if (sy < -HAMSTER_SIZE || sy > GH + HAMSTER_SIZE) continue;
+    const cx = h.x + HAMSTER_SIZE / 2;
+    const dx = tipX - cx, dy = tipY - sy;
+    if (dx * dx + dy * dy <= r * r) return true;
+  }
+  return false;
+}
 
 // 등급 가중치로 아이템 뽑기
 function rollItem() {
@@ -518,6 +610,7 @@ function draw() {
   ctx.clearRect(0, 0, GW, GH);
   drawBg();
   drawEntranceLight();
+  drawHamsters();
   drawItemBox();
   drawRuler();
   drawHUD();
@@ -558,6 +651,44 @@ function drawEntranceLight() {
   ctx.lineTo(GW / 2 - 75, sy + 300);
   ctx.closePath();
   ctx.fill();
+}
+
+function updateHamsters() {
+  const now = Date.now();
+  for (const h of HAMSTERS) {
+    // 1. 스프라이트 프레임 갱신
+    if (now - h.frameTimer >= FRAME_INTERVAL) {
+      h.frameTimer = now;
+      const nextIndex = h.loopIndex + 1;          // % 적용 전 원시 값
+      if (nextIndex === SPRITE_LOOP.length - 1) h.vx *= -1;  // 마지막 프레임 진입 시 방향 전환
+      h.loopIndex = nextIndex % SPRITE_LOOP.length;     // wrap 적용
+    }
+    // 2. 이동 (방향 전환 이후 같은 tick에 적용)
+    h.x += h.vx;
+  }
+}
+
+function drawHamsters() {
+  if (!HAMSTER_SPR.complete || !HAMSTER_SPR.naturalWidth) return;
+  const frameWidth = HAMSTER_SPR.naturalWidth / SPRITE_FRAMES;
+  for (const h of HAMSTERS) {
+    const sy = toScreenY(h.worldY);
+    if (sy < -HAMSTER_SIZE || sy > GH + HAMSTER_SIZE) continue;
+    const sx   = SPRITE_LOOP[h.loopIndex] * frameWidth;
+    const dx   = Math.floor(h.x);
+    const flip = h.vx < 0;
+    ctx.save();
+    if (flip) {
+      ctx.scale(-1, 1);
+      ctx.translate(-(dx * 2 + HAMSTER_SIZE), 0);
+    }
+    ctx.drawImage(
+      HAMSTER_SPR,
+      sx, 0, frameWidth, HAMSTER_SPR.naturalHeight,
+      dx, sy - HAMSTER_SIZE / 2, HAMSTER_SIZE, HAMSTER_SIZE
+    );
+    ctx.restore();
+  }
 }
 
 function drawItemBox() {
@@ -621,20 +752,16 @@ function drawHUD() {
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(0, 0, GW, 26);
 
-  const labels = {
-    [PHASE.DESCEND]: { text: '▼ 내려가는 중', color: '#c8b8e8' },
-    [PHASE.PICKUP]:  { text: '★ 아이템 발견!', color: '#f5c842' },
-    [PHASE.ASCEND]:  { text: '▲ 올라가는 중',  color: '#3dba4e' },
-    [PHASE.DONE]:    { text: '✓ 완료',          color: '#3dba4e' },
-  };
-  const lbl = labels[gs.phase];
+  // 라벨·색상은 PHASE_CONFIG에서 읽음 → 새 페이즈 추가 시 여기 수정 불필요
+  const { label, labelColor } = PHASE_CONFIG[gs.phase];
 
   ctx.font         = '7px "Press Start 2P", monospace';
   ctx.textBaseline = 'middle';
   ctx.textAlign    = 'left';
-  ctx.fillStyle    = lbl.color;
-  ctx.fillText(lbl.text, 8, 13);
+  ctx.fillStyle    = labelColor;
+  ctx.fillText(label, 8, 13);
 
+  // 깊이 퍼센트 (WORLD_H 기준)
   const pct = Math.min(Math.floor(gs.cameraY / WORLD_H * 100), 100);
   ctx.fillStyle = '#666';
   ctx.textAlign = 'right';
