@@ -234,6 +234,66 @@
     }
     .record-row.fail { border-left-color: #e05c2a; }
     .record-date { color: #555; }
+
+    /* ── 햄스터 게임오버 모달 ── */
+    #hamster-modal {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 200;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    #hamster-modal.visible { display: flex; }
+
+    .hm-box {
+      background: #1a0e2e;
+      border: 2px solid #e05c2a;
+      box-shadow: 6px 6px 0 #000;
+      width: 280px;
+      padding: 28px 20px 22px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    .hm-title {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 11px;
+      color: #e05c2a;
+      text-align: center;
+      line-height: 1.7;
+    }
+    .hm-sub {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 7px;
+      color: #c8b8e8;
+      text-align: center;
+      line-height: 1.8;
+    }
+    .hm-btns {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      margin-top: 4px;
+    }
+    .hm-btn {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      padding: 11px 8px;
+      border: none;
+      cursor: pointer;
+      box-shadow: 3px 3px 0 #000;
+      text-align: center;
+      user-select: none;
+    }
+    .hm-btn:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 #000; }
+    .hm-btn-home   { background: #f5c842; color: #1a0e2e; }
+    .hm-btn-col    { background: #2a1a4e; color: #c8b8e8; }
+    .hm-btn-retry  { background: #3dba4e; color: #1a0e2e; }
   </style>
 </head>
 <body>
@@ -287,6 +347,19 @@
     <div id="rec-list"></div>
   </div>
 
+  <!-- 햄스터 게임오버 모달 -->
+  <div id="hamster-modal">
+    <div class="hm-box">
+      <div class="hm-title">😠 잠든 햄스터를<br>건드렸어요!</div>
+      <div class="hm-sub">줄자가 햄스터를 깨워버렸어요.<br>다시 조심해서 탐험해볼까요?</div>
+      <div class="hm-btns">
+        <button class="hm-btn hm-btn-retry"  id="hm-btn-retry" >▶  다시하기</button>
+        <button class="hm-btn hm-btn-col"    id="hm-btn-col"   >📦 도감 보기</button>
+        <button class="hm-btn hm-btn-home"   id="hm-btn-home"  >🏠 홈으로 가기</button>
+      </div>
+    </div>
+  </div>
+
 </div><!-- #app -->
 
 
@@ -305,7 +378,8 @@ const SCROLL_UP     = 2.3;             // × 1.15
 const RW            = 5;               // 자 반너비
 const PICKUP_FRAMES    = 50;
 const ITEM_TRIGGER_PCT = 0.62;   // ? 박스가 도달해야 할 화면 Y 비율 (상단 기준)
-const FLOOR_LIGHT_END  = 300;    // worldY < 이 값이면 floorlight 타일, 이상이면 floordark
+const FLOOR_LIGHT_END     = 300;    // worldY < 이 값이면 floorlight 타일, 이상이면 floordark
+const HAMSTER_WAKE_DELAY  = 90;     // 햄스터 충돌 → 모달 표시까지 대기 프레임 (~1.5초)
 
 // ── 앱 상태 열거값 ──────────────────────────
 const STATE = Object.freeze({
@@ -351,6 +425,17 @@ FLOOR_DARK_IMG.src    = 'assets/floordark.png';
 const FLOOR_LIGHT_IMG = new Image();
 FLOOR_LIGHT_IMG.src   = 'assets/floorlight.PNG';
 
+const RULER_IMG = new Image();
+RULER_IMG.src   = 'assets/ruler.PNG';
+
+const ANG_IMG = new Image();
+ANG_IMG.src   = 'assets/ang.png';
+
+const NORMAL_BOX_IMG = new Image();
+NORMAL_BOX_IMG.src   = 'assets/normalbox.PNG';
+const RARE_BOX_IMG   = new Image();
+RARE_BOX_IMG.src     = 'assets/rarebox.PNG';
+
 const SPRITE_FRAMES   = 5;
 const FRAME_INTERVAL  = 1000 / 2;   // ms per sprite frame → 2fps
 const SPRITE_LOOP     = [0, 1, 2, 3, 4];
@@ -362,14 +447,23 @@ const HAMSTER_X_MAX = GW - HAMSTER_SIZE - 10;   // 318
 
 // 짝수 인덱스 → 왼쪽, 홀수 인덱스 → 오른쪽
 const HAMSTERS = [350, 680, 1020, 1380, 1720, 2050, 2350].map((worldY, i) => {
-  const side = i % 2 === 0 ? 'left' : 'right';
+  const side  = i % 2 === 0 ? 'left' : 'right';
+  const roam  = 30 + Math.random() * 90;                    // 활동 반경 30~120px
+  const speed = 0.4 + Math.random() * 0.8;                  // 속도 0.4~1.2px
+  // 기준점: 왼쪽 햄스터는 좌측, 오른쪽 햄스터는 우측 기준에 랜덤 오프셋
+  const baseX = side === 'left'
+    ? HAMSTER_X_MIN + roam + Math.random() * (GW / 2 - HAMSTER_SIZE - roam - HAMSTER_X_MIN)
+    : HAMSTER_X_MAX - roam - Math.random() * (GW / 2 - HAMSTER_SIZE - roam - HAMSTER_X_MIN);
   return {
     worldY,
     side,
-    x:          side === 'left' ? HAMSTER_X_MIN : HAMSTER_X_MAX,
-    vx:         side === 'left' ? 0.8 : -0.8,
+    baseX,
+    roam,
+    x:          baseX,
+    vx:         side === 'left' ? speed : -speed,
     loopIndex:  0,
     frameTimer: 0,
+    awake:      false,
   };
 });
 
@@ -483,9 +577,15 @@ function startGame() {
     pickupTimer: 0,
     gameOver:    false,
     result:      null,   // 'win' | 'empty'
-    endReason:   null,   // 'win' | 'hamster'
-    itemDropped: false,  // ASCEND 중 먼지 충돌로 아이템 드롭됨
+    endReason:    null,   // 'win' | 'hamster'
+    itemDropped:  false,  // ASCEND 중 먼지 충돌로 아이템 드롭됨
+    carryingBox:  false,  // ASCEND 중 박스를 들고 올라가는 상태
+    caughtByDust:    false,  // 먼지에 박스가 걸린 상태
+    caughtDust:      null,   // 걸린 먼지 객체 참조
+    hamsterHitTimer: 0,      // 햄스터 충돌 후 모달까지 대기 카운터
   };
+  // 햄스터 awake 상태 리셋
+  HAMSTERS.forEach(h => { h.awake = false; });
   if (gameAnimId) cancelAnimationFrame(gameAnimId);
   gameLoop();
 }
@@ -534,11 +634,16 @@ function update() {
 
 // 전환 조건: 현재 페이즈에서 다음 페이즈를 반환, 유지 시 null
 function checkTransition() {
-  // 햄스터 충돌 (DESCEND / ASCEND 에서만)
+  // 햄스터 충돌 (DESCEND / ASCEND 에서만) + 깨어남 딜레이
   if (gs.phase === PHASE.DESCEND || gs.phase === PHASE.ASCEND) {
+    if (gs.hamsterHitTimer > 0) {
+      gs.hamsterHitTimer--;
+      return gs.hamsterHitTimer === 0 ? PHASE.DONE : null;
+    }
     if (hitHamster()) {
       gs.endReason = 'hamster';
-      return PHASE.DONE;
+      gs.hamsterHitTimer = HAMSTER_WAKE_DELAY;
+      return null;   // 딜레이 후 DONE 전환
     }
   }
 
@@ -552,11 +657,16 @@ function checkTransition() {
       return gs.pickupTimer <= 0 ? PHASE.ASCEND : null;
 
     case PHASE.ASCEND:
-      // 먼지 충돌 시 아이템 드롭 (게임오버 없음, DONE까지 정상 진행)
-      if (gs.hasItem && hitDust()) {
-        gs.hasItem     = false;
-        gs.pickedItem  = null;
-        gs.itemDropped = true;
+      // 먼지 충돌: 박스가 먼지에 엉켜 달라붙음 (pickedItem은 결과 화면용으로 유지)
+      if (gs.hasItem && !gs.caughtByDust) {
+        const caught = hitDust();
+        if (caught) {
+          gs.hasItem      = false;
+          gs.itemDropped  = true;
+          gs.carryingBox  = false;
+          gs.caughtByDust = true;
+          gs.caughtDust   = caught;   // 달라붙은 먼지 추적
+        }
       }
       // 입구(cameraY=0) 도달 시 DONE 전환
       return gs.cameraY <= 0 ? PHASE.DONE : null;
@@ -573,11 +683,12 @@ function transitionPhase(next) {
   switch (next) {
     case PHASE.PICKUP:
       gs.pickupTimer = PICKUP_FRAMES;
+      gs.pickedItem  = rollItem();   // 박스 이미지 결정을 위해 PICKUP 진입 시 미리 뽑음
       break;
 
     case PHASE.ASCEND:
-      gs.hasItem    = true;
-      gs.pickedItem = rollItem();
+      gs.hasItem     = true;         // pickedItem은 이미 PICKUP에서 결정됨
+      gs.carryingBox = true;
       break;
 
     case PHASE.DONE:
@@ -603,7 +714,10 @@ function hitHamster() {
     if (sy < -HAMSTER_SIZE || sy > GH + HAMSTER_SIZE) continue;
     const cx = h.x + HAMSTER_SIZE / 2;
     const dx = tipX - cx, dy = tipY - sy;
-    if (dx * dx + dy * dy <= r * r) return true;
+    if (dx * dx + dy * dy <= r * r) {
+      h.awake = true;   // 충돌한 햄스터만 깨움
+      return true;
+    }
   }
   return false;
 }
@@ -615,9 +729,9 @@ function hitDust() {
   for (const d of DUSTS) {
     const dx = tipX - d.x, dy = tipWY - d.worldY;
     const r  = (RW + 3) + d.r;
-    if (dx * dx + dy * dy <= r * r) return true;
+    if (dx * dx + dy * dy <= r * r) return d;   // 충돌한 먼지 객체 반환
   }
-  return false;
+  return null;
 }
 
 // 등급 가중치로 아이템 뽑기
@@ -635,7 +749,7 @@ function endGame(result) {
   gs.result   = result;
 
   save.totalPlays++;
-  if (result === 'win' && gs.pickedItem) {
+  if (result === 'win' && gs.pickedItem && !gs.itemDropped) {
     save.wins++;
     if (!save.collected.includes(gs.pickedItem.id))
       save.collected.push(gs.pickedItem.id);
@@ -649,8 +763,13 @@ function endGame(result) {
   if (save.records.length > 8) save.records.length = 8;
   writeSave();
 
-  // 결과 오버레이 터치 → 메인으로
-  gameCanvas.addEventListener('pointerup', () => gotoState(STATE.MAIN), { once: true });
+  if (result === 'hamster') {
+    // 햄스터 충돌 실패: 전용 모달 표시 (canvas tap으로 닫히지 않음)
+    document.getElementById('hamster-modal').classList.add('visible');
+  } else {
+    // 일반 결과(성공/빈손): canvas 탭으로 메인 복귀
+    gameCanvas.addEventListener('pointerup', () => gotoState(STATE.MAIN), { once: true });
+  }
 }
 
 
@@ -664,7 +783,7 @@ function draw() {
   drawItemBox();
   drawRuler();
   drawHUD();
-  if (gs.gameOver) drawResult();
+  if (gs.gameOver && gs.endReason !== 'hamster') drawResult();
 }
 
 function drawBg() {
@@ -768,12 +887,16 @@ function updateHamsters() {
     // 1. 스프라이트 프레임 갱신
     if (now - h.frameTimer >= FRAME_INTERVAL) {
       h.frameTimer = now;
-      const nextIndex = h.loopIndex + 1;          // % 적용 전 원시 값
-      if (nextIndex === SPRITE_LOOP.length - 1) h.vx *= -1;  // 마지막 프레임 진입 시 방향 전환
-      h.loopIndex = nextIndex % SPRITE_LOOP.length;     // wrap 적용
+      const nextIndex = h.loopIndex + 1;
+      if (nextIndex === SPRITE_LOOP.length - 1) h.vx *= -1;
+      h.loopIndex = nextIndex % SPRITE_LOOP.length;
     }
-    // 2. 이동 (방향 전환 이후 같은 tick에 적용)
+    // 2. 이동 후 baseX ± roam 구간 반사
     h.x += h.vx;
+    const lo = h.baseX - h.roam;
+    const hi = h.baseX + h.roam;
+    if (h.x < lo) { h.x = lo; h.vx = Math.abs(h.vx); }
+    if (h.x > hi) { h.x = hi; h.vx = -Math.abs(h.vx); }
   }
 }
 
@@ -783,8 +906,6 @@ function drawHamsters() {
   for (const h of HAMSTERS) {
     const sy = toScreenY(h.worldY);
     if (sy < -HAMSTER_DRAW || sy > GH + HAMSTER_DRAW) continue;
-    const sx   = SPRITE_LOOP[h.loopIndex] * frameWidth;
-    // 중심(h.x + HAMSTER_SIZE/2)을 기준으로 HAMSTER_DRAW 폭의 왼쪽 끝 계산
     const dx   = Math.floor(h.x + (HAMSTER_SIZE - HAMSTER_DRAW) / 2);
     const flip = h.vx < 0;
     ctx.save();
@@ -792,70 +913,95 @@ function drawHamsters() {
       ctx.scale(-1, 1);
       ctx.translate(-(dx * 2 + HAMSTER_DRAW), 0);
     }
-    ctx.drawImage(
-      HAMSTER_SPR,
-      sx, 0, frameWidth, HAMSTER_SPR.naturalHeight,
-      dx, sy - HAMSTER_DRAW / 2, HAMSTER_DRAW, HAMSTER_DRAW
-    );
+    if (h.awake && ANG_IMG.complete && ANG_IMG.naturalWidth) {
+      // 잠에서 깬 햄스터: ang.png 표시 (동일 크기/위치)
+      ctx.drawImage(ANG_IMG, dx, sy - HAMSTER_DRAW / 2, HAMSTER_DRAW, HAMSTER_DRAW);
+    } else {
+      const sx = SPRITE_LOOP[h.loopIndex] * frameWidth;
+      ctx.drawImage(
+        HAMSTER_SPR,
+        sx, 0, frameWidth, HAMSTER_SPR.naturalHeight,
+        dx, sy - HAMSTER_DRAW / 2, HAMSTER_DRAW, HAMSTER_DRAW
+      );
+    }
     ctx.restore();
   }
 }
 
 function drawItemBox() {
-  const sy = toScreenY(ITEM_Y);
-  if (sy < -20 || sy > GH + 20) return;
+  const BOX_H = 32;
 
-  // pickup 단계 → 깜빡임
-  if (gs.phase === PHASE.PICKUP) {
-    ctx.fillStyle = Math.floor(Date.now() / 180) % 2 ? '#f5c842' : '#e05c2a';
-  } else if (gs.phase === PHASE.DESCEND) {
-    ctx.fillStyle = '#c8b8e8';
-  } else {
-    return; // ascend 이후 박스 숨김
+  function drawBox(cx, cy) {
+    const isRare = gs.pickedItem && gs.pickedItem.rarity !== 'common';
+    const img    = isRare ? RARE_BOX_IMG : NORMAL_BOX_IMG;
+    const BOX_W  = (img.complete && img.naturalWidth)
+      ? img.naturalWidth * BOX_H / img.naturalHeight
+      : BOX_H;
+    if (img.complete && img.naturalWidth) {
+      ctx.drawImage(img, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H);
+    } else {
+      ctx.fillStyle = isRare ? '#f5c842' : '#c8b8e8';
+      ctx.fillRect(cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H);
+    }
   }
 
-  // 16×16 ? 박스
-  ctx.fillRect(GW / 2 - 8, sy - 8, 16, 16);
-  ctx.fillStyle = '#1a0e2e';
-  ctx.font = 'bold 10px "Press Start 2P", monospace';
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('?', GW / 2, sy);
-  ctx.textBaseline = 'alphabetic';
+  if (gs.phase === PHASE.DESCEND || gs.phase === PHASE.PICKUP) {
+    // 월드 좌표 → 화면 좌표로 박스 위치 계산
+    const sy = toScreenY(ITEM_Y);
+    if (sy < -BOX_H || sy > GH + BOX_H) return;
+    // PICKUP 깜빡임 (180ms 토글) — 내용 공개 없음
+    if (gs.phase === PHASE.PICKUP && Math.floor(Date.now() / 180) % 2 === 0) return;
+    drawBox(GW / 2, sy);
+
+  } else if (gs.caughtByDust && gs.caughtDust) {
+    // 먼지에 달라붙은 박스: 먼지의 현재 월드 좌표를 따라 부유
+    const sy = toScreenY(gs.caughtDust.worldY);
+    if (sy >= -BOX_H && sy <= GH + BOX_H) {
+      drawBox(gs.caughtDust.x, sy);
+    }
+
+  } else if (gs.carryingBox && (gs.phase === PHASE.ASCEND || gs.phase === PHASE.DONE)) {
+    const tipX   = gs.rulerX;
+    const tipY   = Math.floor(GH * 0.75);
+    const t      = Date.now() * 0.001;
+    // 아주 약한 흔들림: ±3px 좌우, 0~2px 수직
+    const swingX = Math.sin(t * 2.5) * 3;
+    const swingY = Math.abs(Math.sin(t * 2.5)) * 2;
+
+    // 줄자 끝 → 박스 상단 연결 실
+    const boxTopX = tipX + swingX;
+    const boxTopY = tipY + swingY;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(200,184,232,0.5)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(boxTopX, boxTopY);
+    ctx.stroke();
+    ctx.restore();
+
+    // 박스 중심 = 박스 상단에서 BOX_H/2 아래
+    drawBox(boxTopX, boxTopY + BOX_H / 2);
+  }
 }
 
 function drawRuler() {
   const x    = Math.floor(gs.rulerX);
   const topY = 20;
   const tipY = Math.floor(GH * 0.75);
+  const h    = tipY - topY;
 
-  // 자 몸통
-  ctx.fillStyle = '#f5c842';
-  ctx.fillRect(x - RW, topY, RW * 2, tipY - topY);
-
-  // 눈금 (20칸)
-  ctx.fillStyle = '#1a0e2e';
-  const step = (tipY - topY) / 20;
-  for (let i = 0; i <= 20; i++) {
-    const ty = topY + i * step;
-    const tw = i % 5 === 0 ? RW * 2 : RW;
-    ctx.fillRect(x - RW,       ty, tw, 1);  // 왼쪽
-    ctx.fillRect(x + RW - tw,  ty, tw, 1);  // 오른쪽
+  // 자 이미지 (비율 유지, 높이를 ruler 영역에 맞춤)
+  if (RULER_IMG.complete && RULER_IMG.naturalWidth) {
+    const naturalW = RULER_IMG.naturalWidth * h / RULER_IMG.naturalHeight;
+    const w = (RW * 2 + naturalW) / 2;   // 기존 폭(10px)과 원본 비율 폭의 중간
+    ctx.drawImage(RULER_IMG, x - w / 2, topY, w, h);
+  } else {
+    ctx.fillStyle = '#f5c842';
+    ctx.fillRect(x - RW, topY, RW * 2, h);
   }
 
-  // 끝 원형 (주황)
-  ctx.fillStyle = '#e05c2a';
-  ctx.beginPath();
-  ctx.arc(x, tipY, RW + 3, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 상승 중 아이템 아이콘
-  if (gs.hasItem && gs.pickedItem && gs.phase === PHASE.ASCEND) {
-    ctx.font         = '14px serif';
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(gs.pickedItem.emoji, x, tipY - 14);
-  }
+  // 아이템 아이콘은 DONE 결과 화면에서만 공개 (drawResult 참조)
 }
 
 function drawHUD() {
@@ -1077,6 +1223,22 @@ document.getElementById('btn-collection').addEventListener('click', () => gotoSt
 document.getElementById('btn-records').addEventListener('click', () => gotoState(STATE.RECORDS));
 document.getElementById('btn-back-col').addEventListener('click', () => gotoState(STATE.MAIN));
 document.getElementById('btn-back-rec').addEventListener('click', () => gotoState(STATE.MAIN));
+
+// 햄스터 게임오버 모달 버튼
+(function setupHamsterModal() {
+  const modal = document.getElementById('hamster-modal');
+  function closeModal() { modal.classList.remove('visible'); }
+
+  document.getElementById('hm-btn-home').addEventListener('click', () => {
+    closeModal(); gotoState(STATE.MAIN);
+  });
+  document.getElementById('hm-btn-col').addEventListener('click', () => {
+    closeModal(); gotoState(STATE.COLLECTION);
+  });
+  document.getElementById('hm-btn-retry').addEventListener('click', () => {
+    closeModal(); gotoState(STATE.GAME);
+  });
+}());
 
 
 // ═══════════════════════════════════════════
