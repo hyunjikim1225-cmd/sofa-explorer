@@ -6,6 +6,19 @@
   <title>소파 밑 탐험대</title>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
   <style>
+    @font-face {
+      font-family: 'NormalFont';
+      src: url('fonts/normalfont.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'TitleFont';
+      src: url('fonts/titlefont.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
@@ -22,7 +35,8 @@
       height: 680px;
       position: relative;
       overflow: hidden;
-      font-family: 'Press Start 2P', monospace;
+      font-family: 'NormalFont', 'Press Start 2P', monospace;
+      font-size: 16px;
     }
 
     /* 스캔라인 오버레이 */
@@ -69,13 +83,21 @@
       width: 100%;
     }
 
-    .game-title {
+    .main-title {
+      font-family: 'TitleFont', sans-serif;
+      font-size: 24px;
       color: #f5c842;
-      font-size: 13px;
       text-align: center;
-      line-height: 2;
       text-shadow: 3px 3px 0 #000, -1px -1px 0 #000;
-      margin-bottom: 28px;
+      margin-bottom: 8px;
+    }
+
+    .main-subtitle {
+      font-family: 'NormalFont', sans-serif;
+      font-size: 16px;
+      color: #c8b8e8;
+      text-align: center;
+      margin-bottom: 24px;
     }
 
     #sofa-canvas {
@@ -90,10 +112,11 @@
       background: #f5c842;
       color: #1a0e2e;
       border: none;
-      font-family: 'Press Start 2P', monospace;
-      font-size: 10px;
+      font-family: 'NormalFont', sans-serif;
+      font-size: 16px;
       text-align: center;
       cursor: pointer;
+      border-radius: 12px;
       box-shadow: 4px 4px 0 #000;
       transition: transform 0.05s, box-shadow 0.05s;
       user-select: none;
@@ -110,13 +133,14 @@
 
     .btn-sm {
       padding: 11px 8px;
-      font-size: 9px;
+      font-size: 16px;
       width: 100px;
       background: #2a1a4e;
       color: #c8b8e8;
       border: none;
-      font-family: 'Press Start 2P', monospace;
+      font-family: 'NormalFont', sans-serif;
       cursor: pointer;
+      border-radius: 12px;
       box-shadow: 4px 4px 0 #000;
       transition: transform 0.05s, box-shadow 0.05s;
       user-select: none;
@@ -153,7 +177,8 @@
     }
 
     .screen-title {
-      font-size: 10px;
+      font-family: 'NormalFont', sans-serif;
+      font-size: 16px;
       color: #f5c842;
       text-shadow: 2px 2px 0 #000;
     }
@@ -162,9 +187,10 @@
       background: #2a1a4e;
       color: #c8b8e8;
       border: none;
-      font-family: 'Press Start 2P', monospace;
-      font-size: 8px;
+      font-family: 'NormalFont', sans-serif;
+      font-size: 16px;
       padding: 8px 10px;
+      border-radius: 8px;
       cursor: pointer;
       box-shadow: 3px 3px 0 #000;
     }
@@ -220,13 +246,14 @@
       color: #f5c842;
       margin-bottom: 6px;
     }
-    .stat-label { font-size: 7px; }
+    .stat-label { font-family: 'NormalFont', sans-serif; font-size: 16px; }
 
     .record-row {
       background: #2a1a4e;
       border-left: 3px solid #f5c842;
       padding: 10px 12px;
-      font-size: 8px;
+      font-family: 'NormalFont', sans-serif;
+      font-size: 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -235,8 +262,9 @@
     .record-row.fail { border-left-color: #e05c2a; }
     .record-date { color: #555; }
 
-    /* ── 햄스터 게임오버 모달 ── */
-    #hamster-modal {
+    /* ── 결과 모달 공통 ── */
+    #hamster-modal,
+    #result-modal {
       display: none;
       position: absolute;
       inset: 0;
@@ -246,11 +274,21 @@
       align-items: center;
       justify-content: center;
     }
-    #hamster-modal.visible { display: flex; }
+    #hamster-modal.visible,
+    #result-modal.visible { display: flex; }
+
+    .rm-item {
+      display: none;
+      font-size: 80px;
+      line-height: 1;
+      text-align: center;
+    }
+    .rm-item.visible { display: block; }
 
     .hm-box {
       background: #1a0e2e;
       border: 2px solid #e05c2a;
+      border-radius: 20px;
       box-shadow: 6px 6px 0 #000;
       width: 280px;
       padding: 28px 20px 22px;
@@ -260,15 +298,15 @@
       gap: 14px;
     }
     .hm-title {
-      font-family: 'Press Start 2P', monospace;
-      font-size: 11px;
+      font-family: 'TitleFont', sans-serif;
+      font-size: 22px;
       color: #e05c2a;
       text-align: center;
       line-height: 1.7;
     }
     .hm-sub {
-      font-family: 'Press Start 2P', monospace;
-      font-size: 7px;
+      font-family: 'NormalFont', sans-serif;
+      font-size: 14px;
       color: #c8b8e8;
       text-align: center;
       line-height: 1.8;
@@ -281,10 +319,11 @@
       margin-top: 4px;
     }
     .hm-btn {
-      font-family: 'Press Start 2P', monospace;
-      font-size: 8px;
+      font-family: 'NormalFont', sans-serif;
+      font-size: 16px;
       padding: 11px 8px;
       border: none;
+      border-radius: 12px;
       cursor: pointer;
       box-shadow: 3px 3px 0 #000;
       text-align: center;
@@ -304,7 +343,8 @@
   <div id="screen-main" class="screen" style="display:flex">
     <canvas id="star-canvas"></canvas>
     <div class="main-content">
-      <div class="game-title">소파 밑<br>탐험대</div>
+      <div class="main-title">소파 밑 탐험대</div>
+      <div class="main-subtitle">- 절대 햄스터를 깨우지 마시오 -</div>
       <canvas id="sofa-canvas" width="200" height="122"></canvas>
       <button class="btn" id="btn-start">▶  탐험 시작</button>
       <div class="btn-row">
@@ -350,12 +390,25 @@
   <!-- 햄스터 게임오버 모달 -->
   <div id="hamster-modal">
     <div class="hm-box">
-      <div class="hm-title">😠 잠든 햄스터를<br>건드렸어요!</div>
-      <div class="hm-sub">줄자가 햄스터를 깨워버렸어요.<br>다시 조심해서 탐험해볼까요?</div>
+      <div class="hm-title">탐험 실패</div>
+      <div class="hm-sub">잠든 햄스터를 건드려서 깨워버렸어요.<br>다시 조심해서 탐험해 볼까요?</div>
       <div class="hm-btns">
         <button class="hm-btn hm-btn-retry"  id="hm-btn-retry" >▶  다시하기</button>
         <button class="hm-btn hm-btn-col"    id="hm-btn-col"   >📦 도감 보기</button>
         <button class="hm-btn hm-btn-home"   id="hm-btn-home"  >🏠 홈으로 가기</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="result-modal">
+    <div class="hm-box">
+      <div class="hm-title" id="rm-title"></div>
+      <div class="rm-item"  id="rm-item"></div>
+      <div class="hm-sub"   id="rm-sub"></div>
+      <div class="hm-btns">
+        <button class="hm-btn hm-btn-retry" id="rm-btn-retry">▶  다시하기</button>
+        <button class="hm-btn hm-btn-col"   id="rm-btn-col"  >📦 도감 보기</button>
+        <button class="hm-btn hm-btn-home"  id="rm-btn-home" >🏠 홈으로 가기</button>
       </div>
     </div>
   </div>
@@ -764,11 +817,26 @@ function endGame(result) {
   writeSave();
 
   if (result === 'hamster') {
-    // 햄스터 충돌 실패: 전용 모달 표시 (canvas tap으로 닫히지 않음)
     document.getElementById('hamster-modal').classList.add('visible');
   } else {
-    // 일반 결과(성공/빈손): canvas 탭으로 메인 복귀
-    gameCanvas.addEventListener('pointerup', () => gotoState(STATE.MAIN), { once: true });
+    const modal   = document.getElementById('result-modal');
+    const titleEl = document.getElementById('rm-title');
+    const itemEl  = document.getElementById('rm-item');
+    const subEl   = document.getElementById('rm-sub');
+    if (result === 'win' && gs.pickedItem) {
+      titleEl.textContent = '탐험 성공!';
+      titleEl.style.color = '#f5c842';
+      itemEl.textContent  = gs.pickedItem.emoji;
+      itemEl.classList.add('visible');
+      const rarityColor = { common: '#888', rare: '#44aaff', epic: '#e05c2a' }[gs.pickedItem.rarity];
+      subEl.innerHTML = `${gs.pickedItem.name}<br><span style="color:${rarityColor}">${gs.pickedItem.rarity.toUpperCase()}</span>`;
+    } else {
+      titleEl.textContent = '빈손 귀환';
+      titleEl.style.color = '#e05c2a';
+      itemEl.classList.remove('visible');
+      subEl.textContent = '이번엔 아무것도 찾지 못했어요.';
+    }
+    modal.classList.add('visible');
   }
 }
 
@@ -783,7 +851,6 @@ function draw() {
   drawItemBox();
   drawRuler();
   drawHUD();
-  if (gs.gameOver && gs.endReason !== 'hamster') drawResult();
 }
 
 function drawBg() {
@@ -1236,6 +1303,26 @@ document.getElementById('btn-back-rec').addEventListener('click', () => gotoStat
     closeModal(); gotoState(STATE.COLLECTION);
   });
   document.getElementById('hm-btn-retry').addEventListener('click', () => {
+    closeModal(); gotoState(STATE.GAME);
+  });
+}());
+
+// 결과 모달 버튼
+(function setupResultModal() {
+  const modal  = document.getElementById('result-modal');
+  const itemEl = document.getElementById('rm-item');
+  function closeModal() {
+    modal.classList.remove('visible');
+    itemEl.classList.remove('visible');
+  }
+
+  document.getElementById('rm-btn-home').addEventListener('click', () => {
+    closeModal(); gotoState(STATE.MAIN);
+  });
+  document.getElementById('rm-btn-col').addEventListener('click', () => {
+    closeModal(); gotoState(STATE.COLLECTION);
+  });
+  document.getElementById('rm-btn-retry').addEventListener('click', () => {
     closeModal(); gotoState(STATE.GAME);
   });
 }());
